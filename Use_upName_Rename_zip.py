@@ -10,17 +10,23 @@ def compress_folder_gui():
     # === 初始化主窗口 ===
     root = Tk()
     root.title("文件夹压缩工具")
-    root.geometry("420x220")
+    root.geometry("450x300")
     root.resizable(False, False)
 
     status_text = StringVar(value="请选择要压缩的文件夹")
-    Label(root, textvariable=status_text, wraplength=400, pady=10).pack()
+    Label(root, textvariable=status_text, wraplength=420, pady=10).pack()
 
     # === 保存方式选择 ===
-    Label(root, text="选择压缩包保存方式：", font=("Arial", 10, "bold")).pack()
+    Label(root, text="压缩包保存位置选择：", font=("Arial", 10, "bold")).pack()
     save_mode = IntVar(value=0)  # 0=默认路径，1=自定义路径
     Radiobutton(root, text="默认：与原文件夹同级", variable=save_mode, value=0).pack()
     Radiobutton(root, text="自定义：选择保存文件夹", variable=save_mode, value=1).pack()
+
+    # === 压缩内容/命名方式选择 ===
+    Label(root, text="压缩规则选择：", font=("Arial", 10, "bold"), pady=5).pack()
+    compress_mode = IntVar(value=0)
+    Radiobutton(root, text="模式 A：父名_子名（如 dhm_re）", variable=compress_mode, value=0).pack()
+    Radiobutton(root, text="模式 B：仅压缩当前文件夹（如 dhm）", variable=compress_mode, value=1).pack()
 
     # === 进度条 ===
     progress = ttk.Progressbar(root, mode="determinate", length=380)
@@ -37,18 +43,25 @@ def compress_folder_gui():
         current_folder = os.path.basename(folder_path)
         parent_folder_path = os.path.dirname(folder_path)
         parent_folder = os.path.basename(parent_folder_path)
-        zip_name = f"{parent_folder}_{current_folder}.zip"
 
-        # 确定保存位置
+
+        # zip 文件名：A模式 = 父_子；B模式 = 父目录名
+        if compress_mode.get() == 0:
+            # 模式 A：父名_子名.zip
+            zip_name = f"{parent_folder}_{current_folder}.zip"
+        else:
+            # 模式 B：使用父目录名.zip
+            zip_name = f"{parent_folder}.zip"
+
+
+        # === 确定保存路径 ===
         if save_mode.get() == 1:
-            # 自定义保存路径
             save_path = filedialog.askdirectory(title="选择压缩包保存位置")
             if not save_path:
                 status_text.set("未选择保存路径。")
                 return
             zip_path = os.path.join(save_path, zip_name)
         else:
-            # 默认保存路径
             zip_path = os.path.join(parent_folder_path, zip_name)
 
         # 检查文件是否存在
@@ -57,14 +70,14 @@ def compress_folder_gui():
                 status_text.set("操作已取消。")
                 return
 
-        # === 压缩逻辑在线程中运行 ===
+        # === 压缩逻辑（线程避免 GUI 卡住） ===
         def do_compress():
             try:
-                # 获取所有文件
+                # 收集所有文件
                 all_files = []
                 for root_dir, _, files in os.walk(folder_path):
-                    for file in files:
-                        all_files.append(os.path.join(root_dir, file))
+                    for f in files:
+                        all_files.append(os.path.join(root_dir, f))
                 total = len(all_files)
                 if total == 0:
                     messagebox.showwarning("提示", "该文件夹为空。")
@@ -75,8 +88,17 @@ def compress_folder_gui():
 
                 with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                     for i, file_path in enumerate(all_files, start=1):
+
+                        # === 内部路径保持当前文件夹为根目录 ===
                         arcname = os.path.relpath(file_path, start=parent_folder_path)
-                        zipf.write(file_path, arcname=arcname)
+
+                        # 如果是模式 B，只让内部路径从当前文件夹开始
+                        if compress_mode.get() == 1:
+                            arcname = os.path.relpath(file_path, start=folder_path)
+                            arcname = os.path.join(current_folder, arcname)
+
+                        zipf.write(file_path, arcname)
+
                         progress["value"] = i
                         root.update_idletasks()
 
